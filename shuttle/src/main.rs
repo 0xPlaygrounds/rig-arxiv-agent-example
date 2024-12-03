@@ -1,3 +1,4 @@
+// main.rs
 use axum::{
     extract::{State, Json},
     response::{IntoResponse, Response, Html},
@@ -45,7 +46,7 @@ fn format_papers_as_table(papers: Vec<Paper>) -> Result<String, std::fmt::Error>
 
         writeln!(
             &mut output,
-            "<tr><td>{}</td><td>{}</td><td>{}</td><td><a href='{}' target='_blank'>View Paper</a></td></tr>",
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td><a href='{}' target='_blank' class='paper-link'>View Paper</a></td></tr>",
             paper.title,
             authors,
             paper.categories.join(", "),
@@ -65,7 +66,7 @@ fn format_papers_as_table(papers: Vec<Paper>) -> Result<String, std::fmt::Error>
         writeln!(&mut output, "<p><strong>Abstract:</strong></p>")?;
         writeln!(&mut output, "<p>{}</p>", paper.abstract_text)?;
         writeln!(&mut output, "<p><strong>Categories:</strong> {}</p>", paper.categories.join(", "))?;
-        writeln!(&mut output, "<p><a href='{}' target='_blank'>View on arXiv</a></p>", paper.url)?;
+        writeln!(&mut output, "<p><a href='{}' class='paper-link'>View paper</a></p>", paper.url)?;
         writeln!(&mut output, "</div>")?;
     }
     writeln!(&mut output, "</div></div>")?;
@@ -81,7 +82,6 @@ async fn search_papers(
     State(openai_client): State<openai::Client>,
     Json(request): Json<SearchRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Create agent with arxiv search tool
     let paper_agent = openai_client
         .agent(GPT_4)
         .preamble(
@@ -92,7 +92,6 @@ async fn search_papers(
         .tool(ArxivSearchTool)
         .build();
 
-    // Search for papers based on the query
     let response = paper_agent
         .prompt(&request.query)
         .await?;
@@ -103,12 +102,10 @@ async fn search_papers(
 
 #[shuttle_runtime::main]
 async fn main() -> shuttle_axum::ShuttleAxum {
-    // Initialize OpenAI client
     let openai_client = openai::Client::from_env();
 
-    // Configure CORS
     let cors = CorsLayer::new()
-        .allow_origin(Any) // Allow any origin for development
+        .allow_origin(Any)
         .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
         .allow_headers(Any);
 
@@ -121,9 +118,6 @@ async fn main() -> shuttle_axum::ShuttleAxum {
     Ok(router.into())
 }
 
-//////////////////////
-/// Error Handling ///
-//////////////////////
 struct AppError(anyhow::Error);
 
 impl IntoResponse for AppError {

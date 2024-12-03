@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ArXiv Research Assistant</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        :root {
+            --primary: #4a90e2;
+            --secondary: #f5f5f5;
+            --text: #333;
+            --border: #ddd;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: var(--text);
+            overflow: hidden;
+            background-color: #f8f9fa;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            background-color: white;
+        }
+
+        .chat-panel {
+            width: 45%;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            background-color: white;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            z-index: 1;
+        }
+
+        .pdf-panel {
+            width: 55%;
+            position: relative;
+            background: white;
+            border-left: 1px solid #e0e0e0;
+        }
+
+        #pdf-viewer-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pdf-toolbar {
+            height: 50px;
+            background: #f1f3f4;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .pdf-content {
+            flex: 1;
+            position: relative;
+        }
+
+        #pdf-viewer {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: white;
+        }
+
+        .pdf-placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            color: #666;
+            font-size: 1.2em;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .pdf-placeholder svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            color: #4a90e2;
+        }
+
+        .chat-container {
+            flex-grow: 1;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            overflow-y: auto;
+            padding: 20px;
+            background: white;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            max-width: 90%;
+        }
+
+        .user-message {
+            margin-left: auto;
+            background-color: var(--primary);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 15px 15px 0 15px;
+        }
+
+        .assistant-message {
+            margin-right: auto;
+            background-color: var(--secondary);
+            padding: 10px 15px;
+            border-radius: 15px 15px 15px 0;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+            padding: 10px 0;
+        }
+
+        #user-input {
+            flex-grow: 1;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+
+        #user-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        button {
+            padding: 12px 24px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #357abd;
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0px);
+        }
+
+        .toolbar-button {
+            padding: 8px 16px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            color: #333;
+            font-weight: 500;
+            min-width: 40px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toolbar-button:hover {
+            background-color: #f5f5f5;
+            border-color: #ccc;
+        }
+
+        .loading {
+            display: none;
+            color: var(--primary);
+            margin-left: 20px;
+            align-self: center;
+        }
+
+        .papers-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 14px;
+            background: white;
+        }
+
+        .papers-table th, .papers-table td {
+            border: 1px solid var(--border);
+            padding: 12px;
+            text-align: left;
+        }
+
+        .papers-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .papers-table tr {
+            transition: transform 0.2s ease, background-color 0.2s ease;
+        }
+
+        .papers-table tr:hover {
+            transform: scale(1.01);
+            background-color: #f8f9fa;
+        }
+
+        .abstract-section {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .abstract-container {
+            margin-bottom: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+        }
+
+        .abstract-container:hover {
+            transform: translateY(-2px);
+        }
+
+        .paper-link {
+            display: inline-flex;
+            align-items: center;
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            padding: 6px 12px;
+            border-radius: 4px;
+            background: rgba(74, 144, 226, 0.1);
+            transition: all 0.2s ease;
+        }
+
+        .paper-link:hover {
+            background: rgba(74, 144, 226, 0.2);
+            transform: translateY(-1px);
+            text-decoration: none;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+
+        .zoom-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            padding: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="chat-panel">
+            <h1>ArXiv Research Assistant</h1>
+            <div class="chat-container" id="chat-container">
+                <div class="message assistant-message">
+                    Hello! I can help you find and analyze research papers from arXiv. What topic would you like to explore?
+                </div>
+            </div>
+            <div class="input-container">
+                <input type="text" id="user-input" placeholder="Ask about a research topic..." />
+                <button onclick="sendMessage()">Send</button>
+                <div class="loading" id="loading">Searching papers...</div>
+            </div>
+        </div>
+        
+        <div class="pdf-panel">
+            <div id="pdf-viewer-container">
+                <div class="pdf-toolbar" id="pdf-toolbar" style="display: none;">
+                    <div class="zoom-controls">
+                        <button class="toolbar-button" onclick="zoomOut()">-</button>
+                        <button class="toolbar-button" onclick="resetZoom()">Reset</button>
+                        <button class="toolbar-button" onclick="zoomIn()">+</button>
+                    </div>
+                </div>
+                <div class="pdf-content">
+                    <div class="pdf-placeholder" id="pdf-placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                        <p>Click "View Paper" in the search results to load a paper here</p>
+                    </div>
+                    <iframe id="pdf-viewer" style="display: none;"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const loading = document.getElementById('loading');
+        let currentZoom = 100;
+
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function zoomIn() {
+            currentZoom += 10;
+            updateZoom();
+        }
+        
+        function zoomOut() {
+            currentZoom = Math.max(50, currentZoom - 10);
+            updateZoom();
+        }
+        
+        function resetZoom() {
+            currentZoom = 100;
+            updateZoom();
+        }
+        
+        function updateZoom() {
+            const viewer = document.getElementById('pdf-viewer');
+            viewer.style.transform = `scale(${currentZoom / 100})`;
+            viewer.style.transformOrigin = 'top left';
+        }
+
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            appendMessage(message, 'user');
+            userInput.value = '';
+            loading.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: message
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const text = await response.text();
+                appendMessage(text, 'assistant');
+            } catch (error) {
+                appendMessage('Sorry, there was an error processing your request.', 'assistant');
+                console.error('Error:', error);
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function loadPaper(url) {
+            const pdfViewer = document.getElementById('pdf-viewer');
+            const placeholder = document.getElementById('pdf-placeholder');
+            const toolbar = document.getElementById('pdf-toolbar');
+            
+            pdfViewer.style.display = 'block';
+            placeholder.style.display = 'none';
+            toolbar.style.display = 'flex';
+            
+            currentZoom = 100;
+            updateZoom();
+            
+            pdfViewer.src = url;
+        }
+
+        function appendMessage(message, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}-message`;
+            
+            if (sender === 'assistant') {
+                messageDiv.innerHTML = message;
+                setTimeout(() => {
+                    messageDiv.querySelectorAll('.paper-link').forEach(link => {
+                        link.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            loadPaper(link.href);
+                        });
+                    });
+                }, 0);
+            } else {
+                messageDiv.textContent = message;
+            }
+
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    </script>
+</body>
+</html>

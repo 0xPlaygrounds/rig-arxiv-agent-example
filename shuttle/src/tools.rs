@@ -1,5 +1,5 @@
 use core::str;
-
+use std::fmt::Write;
 use quick_xml::{events::Event, Reader};
 use rig::{completion::ToolDefinition, tool::Tool};
 use serde_json::json;
@@ -85,6 +85,58 @@ impl Tool for ArxivSearchTool {
     }
 }
 
+// HTML formatting function for papers
+pub fn format_papers_as_html(papers: &[Paper]) -> Result<String, std::fmt::Error> {
+    let mut output = String::new();
+
+    // Write table header
+    writeln!(&mut output, "<div class='research-results'>")?;
+    writeln!(&mut output, "<table class='papers-table'>")?;
+    writeln!(
+        &mut output,
+        "<thead><tr><th>Title</th><th>Authors</th><th>Categories</th><th>URL</th></tr></thead>"
+    )?;
+    writeln!(&mut output, "<tbody>")?;
+
+    // Write each paper's information
+    for paper in papers {
+        // Format authors
+        let authors = if paper.authors.len() > 2 {
+            format!("{} et al.", paper.authors[0])
+        } else {
+            paper.authors.join(", ")
+        };
+
+        writeln!(
+            &mut output,
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td><a href='{}' target='_blank' class='paper-link'>View Paper</a></td></tr>",
+            paper.title,
+            authors,
+            paper.categories.join(", "),
+            paper.url
+        )?;
+    }
+
+    writeln!(&mut output, "</tbody></table>")?;
+
+    // Add abstract section
+    writeln!(&mut output, "<div class='abstracts-section'>")?;
+    writeln!(&mut output, "<h2>Paper Abstracts</h2>")?;
+    for paper in papers {
+        writeln!(&mut output, "<div class='abstract-container'>")?;
+        writeln!(&mut output, "<h3>{}</h3>", paper.title)?;
+        writeln!(&mut output, "<p><strong>Authors:</strong> {}</p>", paper.authors.join(", "))?;
+        writeln!(&mut output, "<p><strong>Abstract:</strong></p>")?;
+        writeln!(&mut output, "<p>{}</p>", paper.abstract_text)?;
+        writeln!(&mut output, "<p><strong>Categories:</strong> {}</p>", paper.categories.join(", "))?;
+        writeln!(&mut output, "<p><a href='{}' class='paper-link'>View paper</a></p>", paper.url)?;
+        writeln!(&mut output, "</div>")?;
+    }
+    writeln!(&mut output, "</div></div>")?;
+
+    Ok(output)
+}
+
 fn parse_arxiv_response(response: &str) -> Result<Vec<Paper>, ArxivError> {
     let mut reader = Reader::from_str(response);
     reader.trim_text(true);
@@ -135,7 +187,20 @@ fn parse_arxiv_response(response: &str) -> Result<Vec<Paper>, ArxivError> {
                     if let Some(paper) = current_paper.as_mut() {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"href" {
-                                str::from_utf8(&attr.value)?.clone_into(&mut paper.url);
+                                let url = str::from_utf8(&attr.value)?;
+                                // Convert to HTTPS and ensure PDF URL
+                                let secure_url = if url.contains("arxiv.org/abs/") {
+                                    // Convert abstract URL to PDF URL
+                                    url.replace("arxiv.org/abs/", "arxiv.org/pdf/")
+                                       .replace("http://", "https://") + ".pdf"
+                                } else if url.contains("arxiv.org/pdf/") {
+                                    // Ensure PDF URL uses HTTPS
+                                    url.replace("http://", "https://")
+                                } else {
+                                    // Fallback for other URLs
+                                    url.replace("http://", "https://")
+                                };
+                                secure_url.clone_into(&mut paper.url);
                             }
                         }
                     }

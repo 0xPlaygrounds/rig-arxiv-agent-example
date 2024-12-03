@@ -1,4 +1,3 @@
-// main.rs
 use axum::{
     extract::{State, Json},
     response::{IntoResponse, Response, Html},
@@ -9,115 +8,25 @@ use axum::{
 use tower_http::cors::{CorsLayer, Any};
 
 use rig::{
-    completion::Prompt,
     providers::openai::{self, GPT_4},
+    completion::Prompt,
 };
-use std::fmt::Write as _;
-use tools::{ArxivSearchTool, Paper};
+use std::sync::Arc;
+use anyhow::Context;
 use serde::Deserialize;
 
-mod tools;
+use shuttle_runtime::SecretStore;
 
+mod tools;
+use tools::{ArxivSearchTool, Paper};
+
+// Request structure for search endpoint
 #[derive(Deserialize)]
 struct SearchRequest {
     query: String,
 }
 
-fn format_papers_as_table(papers: Vec<Paper>) -> Result<String, std::fmt::Error> {
-    let mut output = String::new();
-
-    // Write table header
-    writeln!(&mut output, "<div class='research-results'>")?;
-    writeln!(&mut output, "<table class='papers-table'>")?;
-    writeln!(
-        &mut output,
-        "<thead><tr><th>Title</th><th>Authors</th><th>Categories</th><th>URL</th></tr></thead>"
-    )?;
-    writeln!(&mut output, "<tbody>")?;
-
-    // Write each paper's information
-    for paper in papers.iter() {
-        // Format authors
-        let authors = if paper.authors.len() > 2 {
-            format!("{} et al.", paper.authors[0])
-        } else {
-            paper.authors.join(", ")
-        };
-
-        writeln!(
-            &mut output,
-            "<tr><td>{}</td><td>{}</td><td>{}</td><td><a href='{}' target='_blank' class='paper-link'>View Paper</a></td></tr>",
-            paper.title,
-            authors,
-            paper.categories.join(", "),
-            paper.url
-        )?;
-    }
-
-    writeln!(&mut output, "</tbody></table>")?;
-
-    // Add abstract section
-    writeln!(&mut output, "<div class='abstracts-section'>")?;
-    writeln!(&mut output, "<h2>Paper Abstracts</h2>")?;
-    for (_i, paper) in papers.iter().enumerate() {
-        writeln!(&mut output, "<div class='abstract-container'>")?;
-        writeln!(&mut output, "<h3>{}</h3>", paper.title)?;
-        writeln!(&mut output, "<p><strong>Authors:</strong> {}</p>", paper.authors.join(", "))?;
-        writeln!(&mut output, "<p><strong>Abstract:</strong></p>")?;
-        writeln!(&mut output, "<p>{}</p>", paper.abstract_text)?;
-        writeln!(&mut output, "<p><strong>Categories:</strong> {}</p>", paper.categories.join(", "))?;
-        writeln!(&mut output, "<p><a href='{}' class='paper-link'>View paper</a></p>", paper.url)?;
-        writeln!(&mut output, "</div>")?;
-    }
-    writeln!(&mut output, "</div></div>")?;
-
-    Ok(output)
-}
-
-async fn serve_index() -> impl IntoResponse {
-    Html(include_str!("../static/index.html"))
-}
-
-async fn search_papers(
-    State(openai_client): State<openai::Client>,
-    Json(request): Json<SearchRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let paper_agent = openai_client
-        .agent(GPT_4)
-        .preamble(
-            "You are a helpful research assistant that can search and analyze academic papers from arXiv. \
-             When asked about a research topic, use the search_arxiv tool to find relevant papers and \
-             return only the raw JSON response from the tool."
-        )
-        .tool(ArxivSearchTool)
-        .build();
-
-    let response = paper_agent
-        .prompt(&request.query)
-        .await?;
-
-    let papers: Vec<Paper> = serde_json::from_str(&response)?;
-    Ok(Html(format_papers_as_table(papers)?))
-}
-
-#[shuttle_runtime::main]
-async fn main() -> shuttle_axum::ShuttleAxum {
-    let openai_client = openai::Client::from_env();
-
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
-        .allow_headers(Any);
-
-    let router = Router::new()
-        .route("/", get(serve_index))
-        .route("/api/search", post(search_papers))
-        .layer(cors)
-        .with_state(openai_client);
-
-    Ok(router.into())
-}
-
+// Custom error type for the application
 struct AppError(anyhow::Error);
 
 impl IntoResponse for AppError {
@@ -137,4 +46,72 @@ where
     fn from(err: E) -> Self {
         Self(err.into())
     }
+}
+
+// State structure to hold shared data
+struct AppState {
+    openai_client: openai::Client,
+}
+
+// Handler for serving the static index.html
+async fn serve_index() -> impl IntoResponse {
+    Html(include_str!("../static/index.html"))
+}
+
+// Handler for the search endpoint
+async fn search_papers(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<SearchRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let paper_agent = state.openai_client
+        .agent(GPT_4)
+        .preamble(
+            "You are a helpful research assistant that can search and analyze academic papers from arXiv. \
+             When asked about a research topic, use the search_arxiv tool to find relevant papers and \
+             return only the raw JSON response from the tool."
+        )
+        .tool(ArxivSearchTool)
+        .build();
+
+    let response = paper_agent
+        .prompt(&request.query)
+        .await?;
+
+    let papers: Vec<Paper> = serde_json::from_str(&response)?;
+
+    // Format the papers into HTML table
+    let html = tools::format_papers_as_html(&papers)?;
+    Ok(Html(html))
+}
+
+#[shuttle_runtime::main]
+async fn axum(
+    #[shuttle_runtime::Secrets] secrets: SecretStore,
+) -> shuttle_axum::ShuttleAxum {
+    // Initialize OpenAI client from secrets
+    let openai_key = secrets
+        .get("OPENAI_API_KEY")
+        .context("OPENAI_API_KEY secret not found")?;
+    
+    let openai_client = openai::Client::new(&openai_key);
+    
+    // Create shared state
+    let state = Arc::new(AppState {
+        openai_client,
+    });
+
+    // Set up CORS
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+        .allow_headers(Any);
+
+    // Create router
+    let router = Router::new()
+        .route("/", get(serve_index))
+        .route("/api/search", post(search_papers))
+        .layer(cors)
+        .with_state(state);
+
+    Ok(router.into())
 }

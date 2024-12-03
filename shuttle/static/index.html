@@ -61,6 +61,7 @@
             align-items: center;
             padding: 0 20px;
             gap: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
         .pdf-content {
@@ -173,6 +174,21 @@
             padding: 8px 16px;
             background: white;
             border: 1px solid #ddd;
+            border-radius: 4px;
+            color: #333;
+            font-weight: 500;
+            min-width: 40px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toolbar-button:hover {
+            background-color: #f5f5f5;
+            border-color: #ccc;
         }
 
         .loading {
@@ -257,6 +273,8 @@
         .zoom-controls {
             display: flex;
             gap: 8px;
+            align-items: center;
+            padding: 0 10px;
         }
     </style>
 </head>

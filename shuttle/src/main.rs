@@ -1,9 +1,11 @@
 use axum::{
-    extract::State,
-    response::{IntoResponse, Response},
-    routing::get,
+    extract::{State, Json},
+    response::{IntoResponse, Response, Html},
+    routing::{get, post},
     Router,
 };
+
+use tower_http::cors::{CorsLayer, Any};
 
 use rig::{
     completion::Prompt,
@@ -11,81 +13,74 @@ use rig::{
 };
 use std::fmt::Write as _;
 use tools::{ArxivSearchTool, Paper};
+use serde::Deserialize;
 
 mod tools;
+
+#[derive(Deserialize)]
+struct SearchRequest {
+    query: String,
+}
 
 fn format_papers_as_table(papers: Vec<Paper>) -> Result<String, std::fmt::Error> {
     let mut output = String::new();
 
     // Write table header
-    writeln!(&mut output, "\n{:-^120}", " Research Papers ")?;
+    writeln!(&mut output, "<div class='research-results'>")?;
+    writeln!(&mut output, "<table class='papers-table'>")?;
     writeln!(
         &mut output,
-        "{:<50} | {:<20} | {:<15} | {:<30}",
-        "Title", "Authors", "Categories", "URL"
+        "<thead><tr><th>Title</th><th>Authors</th><th>Categories</th><th>URL</th></tr></thead>"
     )?;
-    writeln!(&mut output, "{:-<120}", "")?;
+    writeln!(&mut output, "<tbody>")?;
 
     // Write each paper's information
     for paper in papers.iter() {
-        // Truncate and format title
-        let title = if paper.title.len() > 47 {
-            format!("{}...", &paper.title[..47])
-        } else {
-            paper.title.clone()
-        };
-
         // Format authors
         let authors = if paper.authors.len() > 2 {
             format!("{} et al.", paper.authors[0])
         } else {
             paper.authors.join(", ")
         };
-        let authors = if authors.len() > 17 {
-            format!("{}...", &authors[..17])
-        } else {
-            authors
-        };
-
-        // Format categories
-        let categories = paper.categories.join(", ");
-        let categories = if categories.len() > 12 {
-            format!("{}...", &categories[..12])
-        } else {
-            categories
-        };
-
-        // Format URL
-        let url = if paper.url.len() > 27 {
-            format!("{}...", &paper.url[..27])
-        } else {
-            paper.url.clone()
-        };
 
         writeln!(
             &mut output,
-            "{:<50} | {:<20} | {:<15} | {:<30}",
-            title, authors, categories, url
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td><a href='{}' target='_blank'>View Paper</a></td></tr>",
+            paper.title,
+            authors,
+            paper.categories.join(", "),
+            paper.url
         )?;
     }
 
+    writeln!(&mut output, "</tbody></table>")?;
+
     // Add abstract section
-    writeln!(&mut output, "\n{:-^120}", " Abstracts ")?;
-    for (i, paper) in papers.iter().enumerate() {
-        writeln!(&mut output, "\n{}. {}", i + 1, paper.title)?;
-        writeln!(&mut output, "Authors: {}", paper.authors.join(", "))?;
-        writeln!(&mut output, "\nAbstract:\n{}\n", paper.abstract_text)?;
-        writeln!(&mut output, "Categories: {}\n", paper.categories.join(", "))?;
-        writeln!(&mut output, "URL: {}\n", paper.url)?;
-        writeln!(&mut output, "{:-<120}", "")?;
+    writeln!(&mut output, "<div class='abstracts-section'>")?;
+    writeln!(&mut output, "<h2>Paper Abstracts</h2>")?;
+    for (_i, paper) in papers.iter().enumerate() {
+        writeln!(&mut output, "<div class='abstract-container'>")?;
+        writeln!(&mut output, "<h3>{}</h3>", paper.title)?;
+        writeln!(&mut output, "<p><strong>Authors:</strong> {}</p>", paper.authors.join(", "))?;
+        writeln!(&mut output, "<p><strong>Abstract:</strong></p>")?;
+        writeln!(&mut output, "<p>{}</p>", paper.abstract_text)?;
+        writeln!(&mut output, "<p><strong>Categories:</strong> {}</p>", paper.categories.join(", "))?;
+        writeln!(&mut output, "<p><a href='{}' target='_blank'>View on arXiv</a></p>", paper.url)?;
+        writeln!(&mut output, "</div>")?;
     }
+    writeln!(&mut output, "</div></div>")?;
 
     Ok(output)
 }
 
-async fn summarize_research(
+async fn serve_index() -> impl IntoResponse {
+    Html(include_str!("../static/index.html"))
+}
+
+async fn search_papers(
     State(openai_client): State<openai::Client>,
-) -> Result<String, AppError> {
+    Json(request): Json<SearchRequest>,
+) -> Result<impl IntoResponse, AppError> {
     // Create agent with arxiv search tool
     let paper_agent = openai_client
         .agent(GPT_4)
@@ -97,13 +92,13 @@ async fn summarize_research(
         .tool(ArxivSearchTool)
         .build();
 
-    // Example usage
+    // Search for papers based on the query
     let response = paper_agent
-        .prompt("Find recent papers about large language models and summarize them")
+        .prompt(&request.query)
         .await?;
 
     let papers: Vec<Paper> = serde_json::from_str(&response)?;
-    Ok(format_papers_as_table(papers)?)
+    Ok(Html(format_papers_as_table(papers)?))
 }
 
 #[shuttle_runtime::main]
@@ -111,8 +106,16 @@ async fn main() -> shuttle_axum::ShuttleAxum {
     // Initialize OpenAI client
     let openai_client = openai::Client::from_env();
 
+    // Configure CORS
+    let cors = CorsLayer::new()
+        .allow_origin(Any) // Allow any origin for development
+        .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+        .allow_headers(Any);
+
     let router = Router::new()
-        .route("/", get(summarize_research))
+        .route("/", get(serve_index))
+        .route("/api/search", post(search_papers))
+        .layer(cors)
         .with_state(openai_client);
 
     Ok(router.into())

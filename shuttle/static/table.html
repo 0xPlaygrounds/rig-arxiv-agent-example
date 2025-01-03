@@ -1,0 +1,48 @@
+<div class="research-results">
+    <table class="papers-table">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Authors</th>
+                <th>Categories</th>
+                <th>URL</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for paper in papers %}
+            <tr>
+                <td>
+                    {% if paper.authors | length > 2 %}
+                    {{ paper.authors[0] ~ "et al" }}
+                    {% else %}
+                    {{ paper.authors | join(sep=", ") }}
+                    {% endif %}
+                </td>
+                <td>{{ paper.categories | join(sep=", ") }}</td>
+                <td>{{ paper.url }}</td>
+                <td>
+                    <a href="{{ paper.url }}" target="_blank" class="paper-link"
+                        >View Paper</a
+                    >
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="abstracts-section">
+        <h2>Paper Abstracts</h2>
+        {% for paper in papers %}
+        <div class="abstract-container"></div>
+            <h3>{{ paper.title }}</h3>
+
+            <p><strong>Authors:</strong> {{ paper.authors | join(sep=", ") }}</p>
+            <p><strong>Abstract:</strong></p>
+            <p>{{ paper.abstract_text }}</p>
+            <p><strong>Categories:</strong> {{ paper.categories | join(sep=", ") }}</p>
+            <p><a href="{{ paper.url }}" class="paper-link">View paper</a></p>
+
+         </div>
+        {% endfor %}
+
+    </div>
+</div>

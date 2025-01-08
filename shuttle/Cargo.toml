@@ -6,13 +6,13 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.93"
 axum = "0.7.4"
-quick-xml = { version = "0.31", features = ["serialize"]}
+quick-xml = { version = "0.31", features = ["serialize"] }
 reqwest = "0.12.9"
 rig-core = "0.4.1"
 serde = "1.0.215"
 serde_json = "1.0.133"
-shuttle-axum = "0.49.0"
-shuttle-runtime = "0.49.0"
+shuttle-axum = "0.50.0"
+shuttle-runtime = "0.50.0"
 tera = "1.20.0"
 thiserror = "2.0.3"
 tokio = "1.28.2"
